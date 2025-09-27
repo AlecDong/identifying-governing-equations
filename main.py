@@ -50,9 +50,9 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     }
     
     # Simulation parameters
-    t_span = (0, 20)
+    t_span = (0, 50)
     initial_state = (5.0, 2.0)
-    num_points = 1000
+    num_points = 2000
     
     print(f"System Parameters:")
     for key, value in params.items():
@@ -117,7 +117,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     print("STEP 3: Comparing ODE and SimPy Models...")
     
     # Create common time grid for comparison
-    time_grid = np.linspace(t_span[0], t_span[1], 500)
+    time_grid = np.linspace(t_span[0], t_span[1], num_points)
     
     # Interpolate SimPy data to common grid
     x_simpy_interp, y_simpy_interp = simpy_model.get_interpolated_data(time_grid)
@@ -169,7 +169,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     print("  ✓ Fitting SINDy model...")
     try:
         poly_lib = ps.PolynomialLibrary(degree=2, include_bias=False)
-        queue_lib = min_library(N=10)
+        queue_lib = min_library(N=params['N_capacity'])
 
         combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
         sindy_model = discovery.fit_sindy_model(X_train, X_dot_train, t_train, combined_lib)
@@ -187,6 +187,44 @@ def run_complete_analysis(save_plots=True, show_plots=False):
         print(f"  ⚠ SINDy fitting failed: {str(e)}")
         discovery = None
         sindy_model = None
+
+    # ========================================
+    # STEP 4b: Equation Discovery with PySINDy on SimPy data
+    # ========================================
+    print("STEP 4b: Applying PySINDy to SimPy data...")
+
+    # Prepare data for SINDy (SimPy data)
+    simpy_df = simpy_model.get_data_frame(time_grid)
+
+    discovery_simpy = EquationDiscovery(threshold=0.01, alpha=0.05)
+
+    X_train_simpy, X_dot_train_simpy, t_train_simpy = discovery_simpy.prepare_data(simpy_df)
+
+    print(f"  ✓ Training data shape (SimPy): {X_train_simpy.shape}")
+    print(f"  ✓ Derivatives shape (SimPy): {X_dot_train_simpy.shape}")
+
+    # Fit SINDy model on SimPy data
+    print("  ✓ Fitting SINDy model on SimPy data...")
+    try:
+        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=False)
+        queue_lib = min_library(N=params['N_capacity'])
+
+        combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
+        simpy_sindy_model = discovery_simpy.fit_sindy_model(X_train_simpy, X_dot_train_simpy, t_train_simpy, combined_lib)
+
+        print("  ✓ SINDy model fitted successfully on SimPy data")
+
+        # Extract discovered equations
+        print("\\n  Discovered Equations (SimPy):")
+        for i, eq in enumerate(discovery_simpy.discovered_equations):
+            var_name = 'x' if i == 0 else 'y'
+            print(f"  d{var_name}/dt = {eq}")
+        print()
+
+    except Exception as e:
+        print(f"  ⚠ SINDy fitting failed on SimPy data: {str(e)}")
+        discovery_simpy = None
+        simpy_sindy_model = None
     
     # ========================================
     # STEP 5: Compare True vs Discovered Systems
@@ -222,6 +260,74 @@ def run_complete_analysis(save_plots=True, show_plots=False):
         else:
             plt.close(fig2)
     
+    # ========================================
+    # STEP 5b: Compare True vs Discovered System (SimPy SINDy)
+    # ========================================
+    if simpy_sindy_model is not None:
+        print("STEP 5b: Comparing True vs SimPy-Discovered Systems...")
+
+        # Compare systems
+        comparison_results_simpy = discovery_simpy.compare_with_true_system(
+            params, initial_state, time_grid
+        )
+
+        print(f"  ✓ R² Score (x) (SimPy): {comparison_results_simpy['r2_x']:.4f}")
+        print(f"  ✓ R² Score (y) (SimPy): {comparison_results_simpy['r2_y']:.4f}")
+        print(f"  ✓ Average R² (SimPy): {comparison_results_simpy['avg_r2']:.4f}")
+        print(f"  ✓ Total MSE (SimPy): {comparison_results_simpy['total_mse']:.6f}")
+        print()
+
+        # Plot SINDy comparison
+        fig2b = viz.plot_sindy_comparison(
+            comparison_results_simpy['true_solution'],
+            comparison_results_simpy['discovered_solution'],
+            comparison_results_simpy['time'],
+            comparison_results_simpy
+        )
+
+        if save_plots:
+            fig2b.savefig(output_dir / "sindy_comparison_simpy.png", dpi=300, bbox_inches='tight')
+            print("  ✓ SINDy comparison plot (SimPy) saved")
+
+        if show_plots:
+            plt.show()
+        else:
+            plt.close(fig2b)
+    
+    # ========================================
+    # STEP 5c: Compare SimPy training data vs Discovered System (SimPy SINDy)
+    # ========================================
+    if simpy_sindy_model is not None:
+        print("STEP 5c: Comparing SimPy Training Data vs SimPy-Discovered Systems...")
+
+        # Compare systems
+        comparison_results_simpy_train = discovery_simpy.compare_with_training_data(
+            X_train_simpy, t_train_simpy, time_grid
+        )
+
+        print(f"  ✓ R² Score (x) (SimPy Train): {comparison_results_simpy_train['r2_x']:.4f}")
+        print(f"  ✓ R² Score (y) (SimPy Train): {comparison_results_simpy_train['r2_y']:.4f}")
+        print(f"  ✓ Average R² (SimPy Train): {comparison_results_simpy_train['avg_r2']:.4f}")
+        print(f"  ✓ Total MSE (SimPy Train): {comparison_results_simpy_train['total_mse']:.6f}")
+        print()
+
+        # Plot SINDy comparison
+        fig2c = viz.plot_sindy_comparison(
+            X_train_simpy,
+            comparison_results_simpy_train['discovered_solution'],
+            comparison_results_simpy_train['time'],
+            comparison_results_simpy_train
+        )
+
+        if save_plots:
+            fig2c.savefig(output_dir / "sindy_comparison_simpy_train.png", dpi=300, bbox_inches='tight')
+            print("  ✓ SINDy comparison plot (SimPy Training Data) saved")
+
+        if show_plots:
+            plt.show()
+        else:
+            plt.close(fig2c)
+
     # ========================================
     # STEP 6: Create Summary Report
     # ========================================

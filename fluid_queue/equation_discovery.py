@@ -246,27 +246,57 @@ class EquationDiscovery:
             'avg_r2': (r2_x + r2_y) / 2
         }
     
-    def print_discovered_equations(self):
+    def compare_with_training_data(self, X_train, t_train, time_grid):
         """
-        Print the discovered equations in a readable format.
+        Compare discovered system with training data.
+        
+        Parameters:
+        -----------
+        X_train : ndarray
+            Training state variables
+        t_train : ndarray
+            Training time vector
+        time_grid : ndarray
+            Time points for simulation
+            
+        Returns:
+        --------
+        comparison_results : dict
+            Comparison metrics and data
         """
         if self.model is None:
-            print("No model fitted yet.")
-            return
+            raise ValueError("Model not fitted. Call fit_sindy_model first.")
         
-        print("Discovered Equations:")
-        print("=" * 50)
+        # Simulate discovered system from initial training state
+        initial_state = X_train[0]
+        discovered_solution = self.simulate_discovered_system(initial_state, time_grid)
         
-        equations = self.model.equations()
-        for i, eq in enumerate(equations):
-            var_name = 'x' if i == 0 else 'y'
-            print(f"d{var_name}/dt = {eq}")
+        # Interpolate training data to the simulation time grid
+        from scipy.interpolate import interp1d
+        interp_func_x = interp1d(t_train, X_train[:, 0], kind='linear', fill_value="extrapolate")
+        interp_func_y = interp1d(t_train, X_train[:, 1], kind='linear', fill_value="extrapolate")
         
-        print("\nCoefficient Matrix:")
-        print("=" * 50)
-        print("Features:", self.feature_names)
-        print("Coefficients:")
-        print(self.coefficients)
+        x_train_interp = interp_func_x(time_grid)
+        y_train_interp = interp_func_y(time_grid)
+        
+        # Calculate metrics
+        mse_x = mean_squared_error(x_train_interp, discovered_solution[:, 0])
+        mse_y = mean_squared_error(y_train_interp, discovered_solution[:, 1])
+        
+        r2_x = r2_score(x_train_interp, discovered_solution[:, 0])
+        r2_y = r2_score(y_train_interp, discovered_solution[:, 1])
+        
+        return {
+            'time': time_grid,
+            'training_data': np.column_stack((x_train_interp, y_train_interp)),
+            'discovered_solution': discovered_solution,
+            'mse_x': mse_x,
+            'mse_y': mse_y,
+            'r2_x': r2_x,
+            'r2_y': r2_y,
+            'total_mse': mse_x + mse_y,
+            'avg_r2': (r2_x + r2_y) / 2
+        }
     
     def plot_comparison(self, comparison_results, figsize=(15, 10)):
         """
