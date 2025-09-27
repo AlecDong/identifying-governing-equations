@@ -9,6 +9,7 @@ This script demonstrates the complete pipeline:
 4. Compare and visualize results
 """
 
+import pysindy as ps
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -21,6 +22,7 @@ from fluid_queue.fluid_queue_ode import FluidQueueODE
 from fluid_queue.fluid_queue_simpy import FluidQueueSimPy
 from fluid_queue.equation_discovery import EquationDiscovery
 from fluid_queue.visualizer import Visualizer
+from fluid_queue.custom_equation_libraries import min_library
 
 
 def run_complete_analysis(save_plots=True, show_plots=False):
@@ -166,7 +168,11 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     # Fit SINDy model
     print("  ✓ Fitting SINDy model...")
     try:
-        sindy_model = discovery.fit_sindy_model(X_train, X_dot_train, t_train)
+        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=False)
+        queue_lib = min_library(N=10)
+
+        combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
+        sindy_model = discovery.fit_sindy_model(X_train, X_dot_train, t_train, combined_lib)
         print("  ✓ SINDy model fitted successfully")
         
         # Print discovered equations
