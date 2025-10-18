@@ -40,7 +40,6 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     print("FLUID QUEUE SIMULATION AND EQUATION DISCOVERY")
     print("="*60)
     
-    # System parameters
     params = {
         'lambda_arrival': 2.0,
         'mu_service': 3.0,
@@ -81,6 +80,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     
     print(f"  ✓ ODE simulation completed")
     print(f"  ✓ Generated {len(t_ode)} time points")
+    print(f"  ✓ Initial state: x = {x_ode[0]:.4f}, y = {y_ode[0]:.4f}")
     print(f"  ✓ Final state: x = {x_ode[-1]:.4f}, y = {y_ode[-1]:.4f}")
     
     # Get equilibrium
@@ -102,6 +102,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     
     print(f"  ✓ SimPy simulation completed")
     print(f"  ✓ Generated {len(t_simpy)} events")
+    print(f"  ✓ Initial state: x = {x_simpy[0]:.4f}, y = {y_simpy[0]:.4f}")
     print(f"  ✓ Final state: x = {x_simpy[-1]:.4f}, y = {y_simpy[-1]:.4f}")
     
     # Get simulation statistics
@@ -234,7 +235,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
         
         # Compare systems
         comparison_results = discovery.compare_with_true_system(
-            params, initial_state, time_grid
+            solution_ode, initial_state, t_ode
         )
         
         print(f"  ✓ R² Score (x): {comparison_results['r2_x']:.4f}")
@@ -268,7 +269,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
 
         # Compare systems
         comparison_results_simpy = discovery_simpy.compare_with_true_system(
-            params, initial_state, time_grid
+            solution_ode, initial_state, t_ode
         )
 
         print(f"  ✓ R² Score (x) (SimPy): {comparison_results_simpy['r2_x']:.4f}")
@@ -302,7 +303,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
 
         # Compare systems
         comparison_results_simpy_train = discovery_simpy.compare_with_training_data(
-            X_train_simpy, t_train_simpy, time_grid
+            X_train_simpy, t_train_simpy, t_ode
         )
 
         print(f"  ✓ R² Score (x) (SimPy Train): {comparison_results_simpy_train['r2_x']:.4f}")
@@ -347,6 +348,22 @@ def run_complete_analysis(save_plots=True, show_plots=False):
             plt.show()
         else:
             plt.close(fig3)
+    
+    print("STEP 6b: Creating Summary Report for SimPy SINDy...")
+    if discovery_simpy is not None:
+        fig3b = viz.create_summary_report(
+            ode_model, simpy_model, discovery_simpy, 
+            comparison_results_simpy if discovery_simpy else None
+        )
+
+        if save_plots:
+            fig3b.savefig(output_dir / "summary_report_simpy.png", dpi=300, bbox_inches='tight')
+            print("  ✓ Summary report (SimPy SINDy) saved")
+
+        if show_plots:
+            plt.show()
+        else:
+            plt.close(fig3b)
     
     # ========================================
     # STEP 7: Save Data to Files
