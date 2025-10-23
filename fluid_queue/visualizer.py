@@ -390,7 +390,6 @@ System Parameters:
 • Return Rate (γ): {ode_model.gamma_return:.2f}
 • Service Capacity (N): {ode_model.N_capacity:.2f}
 
-Theoretical Equilibrium: x* = {ode_model.get_equilibrium()[0]:.3f}, y* = {ode_model.get_equilibrium()[1]:.3f}
         """
         ax1.text(0.5, 0.5, params_text, transform=ax1.transAxes, 
                 fontsize=12, ha='center', va='center',

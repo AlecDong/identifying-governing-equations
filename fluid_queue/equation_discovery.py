@@ -50,7 +50,7 @@ class EquationDiscovery:
         self.t_train = None
         self.X_dot_train = None
         
-    def prepare_data(self, data_df, dt=None, smoothing_window=5):
+    def prepare_data(self, data_df, dt=None, smoothing_window=1):
         """
         Prepare data for SINDy analysis.
         
@@ -83,7 +83,7 @@ class EquationDiscovery:
             dt = np.mean(np.diff(t))
         
         # Compute derivatives using finite differences
-        X_dot = np.gradient(X, dt, axis=0)
+        X_dot = np.gradient(X, t, axis=0)
         
         # Apply smoothing to derivatives if requested
         if smoothing_window > 1:
@@ -122,7 +122,7 @@ class EquationDiscovery:
         # Create SINDy model
         self.model = ps.SINDy(
             optimizer=ps.STLSQ(threshold=self.threshold, alpha=self.alpha, 
-                              max_iter=self.max_iter),
+                              max_iter=self.max_iter, verbose=True, normalize_columns=False),
             feature_library=feature_library,
             differentiation_method=ps.FiniteDifference()
         )

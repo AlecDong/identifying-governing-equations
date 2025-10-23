@@ -25,7 +25,7 @@ from fluid_queue.visualizer import Visualizer
 from fluid_queue.custom_equation_libraries import min_library
 
 
-def run_complete_analysis(save_plots=True, show_plots=False):
+def run_complete_analysis(params, save_plots=True, show_plots=False):
     """
     Run the complete fluid queue analysis pipeline.
     
@@ -40,17 +40,9 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     print("FLUID QUEUE SIMULATION AND EQUATION DISCOVERY")
     print("="*60)
     
-    params = {
-        'lambda_arrival': 2.0,
-        'mu_service': 3.0,
-        'p_return': 0.3,
-        'gamma_return': 1.5,
-        'N_capacity': 10.0
-    }
-    
     # Simulation parameters
-    t_span = (0, 50)
-    initial_state = (5.0, 2.0)
+    t_span = (0, 10)
+    initial_state = (0.0, 0.0)
     num_points = 2000
     
     print(f"System Parameters:")
@@ -64,7 +56,9 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     viz = Visualizer()
     
     # Create output directory
-    output_dir = Path("results")
+    output_dir = Path("results/lambda_{}__N_{}".format(
+        params['lambda_arrival'], params['N_capacity']
+    ))
     output_dir.mkdir(exist_ok=True)
     
     # ========================================
@@ -83,10 +77,6 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     print(f"  ✓ Initial state: x = {x_ode[0]:.4f}, y = {y_ode[0]:.4f}")
     print(f"  ✓ Final state: x = {x_ode[-1]:.4f}, y = {y_ode[-1]:.4f}")
     
-    # Get equilibrium
-    x_eq, y_eq = ode_model.get_equilibrium()
-    print(f"  ✓ Theoretical equilibrium: x* = {x_eq:.4f}, y* = {y_eq:.4f}")
-    print()
     
     # ========================================
     # STEP 2: SimPy Stochastic Simulation
@@ -157,7 +147,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     # Prepare data for SINDy (using ODE data for cleaner derivatives)
     ode_df = ode_model.get_data_frame()
     
-    discovery = EquationDiscovery(threshold=0.01, alpha=0.05)
+    discovery = EquationDiscovery(threshold=0.1, alpha=0.05, max_iter=20)
     
     # Prepare training data
     print("  ✓ Preparing training data...")
@@ -169,7 +159,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     # Fit SINDy model
     print("  ✓ Fitting SINDy model...")
     try:
-        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=False)
+        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=True, include_interaction=True)
         queue_lib = min_library(N=params['N_capacity'])
 
         combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
@@ -177,7 +167,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
         print("  ✓ SINDy model fitted successfully")
         
         # Print discovered equations
-        print("\\n  Discovered Equations:")
+        print("\n  Discovered Equations:")
         print("  " + "="*40)
         for i, eq in enumerate(discovery.discovered_equations):
             var_name = 'x' if i == 0 else 'y'
@@ -197,7 +187,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     # Prepare data for SINDy (SimPy data)
     simpy_df = simpy_model.get_data_frame(time_grid)
 
-    discovery_simpy = EquationDiscovery(threshold=0.01, alpha=0.05)
+    discovery_simpy = EquationDiscovery(threshold=0.1, alpha=0.05, max_iter=20)
 
     X_train_simpy, X_dot_train_simpy, t_train_simpy = discovery_simpy.prepare_data(simpy_df)
 
@@ -207,7 +197,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     # Fit SINDy model on SimPy data
     print("  ✓ Fitting SINDy model on SimPy data...")
     try:
-        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=False)
+        poly_lib = ps.PolynomialLibrary(degree=1, include_bias=True, include_interaction=True)
         queue_lib = min_library(N=params['N_capacity'])
 
         combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
@@ -216,7 +206,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
         print("  ✓ SINDy model fitted successfully on SimPy data")
 
         # Extract discovered equations
-        print("\\n  Discovered Equations (SimPy):")
+        print("\n  Discovered Equations (SimPy):")
         for i, eq in enumerate(discovery_simpy.discovered_equations):
             var_name = 'x' if i == 0 else 'y'
             print(f"  d{var_name}/dt = {eq}")
@@ -393,27 +383,52 @@ def run_complete_analysis(save_plots=True, show_plots=False):
         
         # Save discovered equations and coefficients
         with open(output_dir / "discovered_equations.txt", 'w') as f:
-            f.write("Discovered Equations by PySINDy\\n")
-            f.write("=" * 40 + "\\n\\n")
+            f.write("Discovered Equations by PySINDy\n")
+            f.write("=" * 40 + "\n\n")
             for i, eq in enumerate(discovery.discovered_equations):
                 var_name = 'x' if i == 0 else 'y'
-                f.write(f"d{var_name}/dt = {eq}\\n")
+                f.write(f"d{var_name}/dt = {eq}\n")
             
-            f.write("\\n" + "=" * 40 + "\\n")
-            f.write("Feature Names:\\n")
+            f.write("\n" + "=" * 40 + "\n")
+            f.write("Feature Names:\n")
             for i, name in enumerate(discovery.feature_names):
-                f.write(f"{i}: {name}\\n")
+                f.write(f"{i}: {name}\n")
             
-            f.write("\\n" + "=" * 40 + "\\n")
-            f.write("Coefficient Matrix:\\n")
+            f.write("\n" + "=" * 40 + "\n")
+            f.write("Coefficient Matrix:\n")
             f.write(str(discovery.coefficients))
             
-            f.write("\\n\\n" + "=" * 40 + "\\n")
-            f.write("Performance Metrics:\\n")
-            f.write(f"R² Score (x): {comparison_results['r2_x']:.6f}\\n")
-            f.write(f"R² Score (y): {comparison_results['r2_y']:.6f}\\n")
-            f.write(f"Average R²: {comparison_results['avg_r2']:.6f}\\n")
-            f.write(f"Total MSE: {comparison_results['total_mse']:.6f}\\n")
+            f.write("\n\n" + "=" * 40 + "\n")
+            f.write("Performance Metrics:\n")
+            f.write(f"R² Score (x): {comparison_results['r2_x']:.6f}\n")
+            f.write(f"R² Score (y): {comparison_results['r2_y']:.6f}\n")
+            f.write(f"Average R²: {comparison_results['avg_r2']:.6f}\n")
+            f.write(f"Total MSE: {comparison_results['total_mse']:.6f}\n")
+
+            f.write("\n")
+            # also save SimPy SINDy results if available
+            if discovery_simpy is not None:
+                f.write("Discovered Equations by PySINDy (SimPy Data)\n")
+                f.write("=" * 40 + "\n\n")
+                for i, eq in enumerate(discovery_simpy.discovered_equations):
+                    var_name = 'x' if i == 0 else 'y'
+                    f.write(f"d{var_name}/dt = {eq}\n")
+
+                f.write("\n" + "=" * 40 + "\n")
+                f.write("Feature Names (SimPy):\n")
+                for i, name in enumerate(discovery_simpy.feature_names):
+                    f.write(f"{i}: {name}\n")
+
+                f.write("\n" + "=" * 40 + "\n")
+                f.write("Coefficient Matrix (SimPy):\n")
+                f.write(str(discovery_simpy.coefficients))
+
+                f.write("\n\n" + "=" * 40 + "\n")
+                f.write("Performance Metrics (SimPy):\n")
+                f.write(f"R² Score (x): {comparison_results_simpy['r2_x']:.6f}\n")
+                f.write(f"R² Score (y): {comparison_results_simpy['r2_y']:.6f}\n")
+                f.write(f"Average R²: {comparison_results_simpy['avg_r2']:.6f}\n")
+                f.write(f"Total MSE: {comparison_results_simpy['total_mse']:.6f}\n")
         
         print("  ✓ Discovered equations saved to discovered_equations.txt")
     
@@ -422,7 +437,7 @@ def run_complete_analysis(save_plots=True, show_plots=False):
     print("ANALYSIS COMPLETE!")
     print("=" * 60)
     print(f"Results saved in: {output_dir.absolute()}")
-    print("\\nFiles generated:")
+    print("\nFiles generated:")
     for file_path in sorted(output_dir.glob("*")):
         print(f"  • {file_path.name}")
     print()
@@ -445,10 +460,35 @@ if __name__ == "__main__":
     parser.add_argument("--no-save", action="store_true", help="Don't save plots to files")
     
     args = parser.parse_args()
+
+    params = [
+        {
+            'lambda_arrival': 5.0,
+            'mu_service': 3.0,
+            'p_return': 0.3,
+            'gamma_return': 1.5,
+            'N_capacity': 2.0
+        },
+        {
+            'lambda_arrival': 5.0,
+            'mu_service': 3.0,
+            'p_return': 0.3,
+            'gamma_return': 1.5,
+            'N_capacity': 4.0
+        }
+    ]
     
-    main_results = run_complete_analysis(
-        save_plots=not args.no_save,
-        show_plots=args.show_plots
-    )
+    scalings = [1, 10, 50, 100, 500, 1000]
+    for param in params:
+        for scale in scalings:
+            params_copy = param.copy()
+            params_copy['lambda_arrival'] = params_copy['lambda_arrival'] * scale
+            params_copy['N_capacity'] = params_copy['N_capacity'] * scale
+            print(f"\n=== Running analysis with scaling factor: {scale} ===\n")
+            main_results = run_complete_analysis(
+                params=params_copy,
+                save_plots=not args.no_save,
+                show_plots=args.show_plots
+            )
     
-    print("\\n🎉 All analyses completed successfully!")
+    print("\n🎉 All analyses completed successfully!")
