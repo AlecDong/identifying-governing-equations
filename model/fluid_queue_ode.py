@@ -199,34 +199,3 @@ class FluidQueueODE:
         
         plt.tight_layout()
         return fig
-    
-    def get_equilibrium(self):
-        """
-        Calculate the theoretical equilibrium point.
-        
-        Returns:
-        --------
-        equilibrium : tuple
-            (x_eq, y_eq) - equilibrium values
-        """
-        # At equilibrium: x' = 0, y' = 0
-        # From y' = 0: y_eq = (p * μ * min(x_eq, N)) / γ
-        # From x' = 0: λ - μ * min(x_eq, N) + γ * y_eq = 0
-        # Substituting: λ - μ * min(x_eq, N) + p * μ * min(x_eq, N) = 0
-        # μ * min(x_eq, N) * (1 - p) = λ
-        # min(x_eq, N) = λ / (μ * (1 - p))
-        
-        service_eq = self.lambda_arrival / (self.mu_service * (1 - self.p_return))
-        
-        if service_eq <= self.N_capacity:
-            x_eq = service_eq
-        else:
-            # Server is at capacity
-            x_eq = self.lambda_arrival / (self.mu_service * (1 - self.p_return)) + \
-                   (self.lambda_arrival - self.mu_service * self.N_capacity * (1 - self.p_return)) / 0
-            # This case needs more careful analysis for stability
-            x_eq = service_eq  # Simplified for now
-        
-        y_eq = (self.p_return * self.mu_service * min(x_eq, self.N_capacity)) / self.gamma_return
-        
-        return x_eq, y_eq

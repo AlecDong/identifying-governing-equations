@@ -39,11 +39,6 @@ cd identifying-governing-equations
 pip install -r requirements.txt
 ```
 
-3. Install the package (optional):
-```bash
-pip install -e .
-```
-
 ## Quick Start
 
 Run the complete analysis pipeline:
@@ -57,77 +52,6 @@ This will:
 2. Run the SimPy stochastic simulation
 3. Apply PySINDy to discover equations
 4. Generate comparison plots and save results
-
-## Usage Examples
-
-### Basic ODE Simulation
-
-```python
-from fluid_queue import FluidQueueODE
-
-# Initialize model
-model = FluidQueueODE(lambda_arrival=2.0, mu_service=3.0, 
-                      p_return=0.3, gamma_return=1.5, N_capacity=10.0)
-
-# Simulate
-time_points, solution = model.simulate(t_span=(0, 20), 
-                                     initial_state=(5.0, 2.0), 
-                                     num_points=1000)
-
-# Plot results
-fig = model.plot_trajectories()
-```
-
-### Stochastic SimPy Simulation
-
-```python
-from fluid_queue import FluidQueueSimPy
-
-# Initialize stochastic model
-model = FluidQueueSimPy(lambda_arrival=2.0, mu_service=3.0,
-                        p_return=0.3, gamma_return=1.5, N_capacity=10.0)
-
-# Simulate
-t_simpy, x_simpy, y_simpy = model.simulate(simulation_time=20.0,
-                                          initial_x=5.0, initial_y=2.0)
-
-# Get statistics
-stats = model.get_statistics()
-```
-
-### Equation Discovery with PySINDy
-
-```python
-from fluid_queue import EquationDiscovery
-
-# Initialize equation discovery
-discovery = EquationDiscovery(threshold=0.01, alpha=0.05)
-
-# Prepare data from ODE simulation
-X, X_dot, t = discovery.prepare_data(ode_data_frame)
-
-# Fit SINDy model
-sindy_model = discovery.fit_sindy_model(X, X_dot, t)
-
-# Print discovered equations
-discovery.print_discovered_equations()
-
-# Compare with true system
-comparison = discovery.compare_with_true_system(parameters, initial_state, time_points)
-```
-
-## Command Line Options
-
-```bash
-# Display plots interactively
-python main.py --show-plots
-
-# Skip saving plots to files  
-python main.py --no-save
-
-# Run parameter sensitivity study
-python main.py --parameter-study
-```
 
 ## Output Files
 
@@ -168,27 +92,3 @@ dy/dt = p·μ·min(x(t),N) - γ·y(t)
 - `pysindy>=1.7.0`: Equation discovery
 - `pandas>=1.3.0`: Data handling
 - `seaborn>=0.11.0`: Enhanced plotting
-
-## Project Structure
-
-```
-identifying-governing-equations/
-├── fluid_queue/                    # Main package
-│   ├── __init__.py                # Package initialization
-│   ├── fluid_queue_ode.py         # ODE model implementation
-│   ├── fluid_queue_simpy.py       # SimPy stochastic model
-│   ├── equation_discovery.py      # PySINDy integration
-│   └── visualizer.py              # Visualization tools
-├── main.py                        # Main script
-├── requirements.txt               # Dependencies
-├── setup.py                       # Package setup
-└── README.md                      # This file
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.

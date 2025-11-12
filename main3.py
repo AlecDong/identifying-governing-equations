@@ -20,7 +20,7 @@ warnings.filterwarnings('ignore')
 # Import our modules
 from model.fluid_queue_ode import FluidQueueODE
 from model.fluid_queue_simpy import FluidQueueSimPy
-from SINDy.equation_discovery import EquationDiscovery
+from SINDy.joint_estimation import EquationDiscoveryWithDiffusion
 from SINDy.custom_equation_libraries import min_library
 from utils.visualizer import Visualizer
 
@@ -56,7 +56,7 @@ def run_complete_analysis(params, save_plots=True, show_plots=False):
     viz = Visualizer()
     
     # Create output directory
-    output_dir = Path("results/lambda_{}__N_{}".format(
+    output_dir = Path("results_2/lambda_{}__N_{}".format(
         params['lambda_arrival'], params['N_capacity']
     ))
     output_dir.mkdir(exist_ok=True)
@@ -146,38 +146,33 @@ def run_complete_analysis(params, save_plots=True, show_plots=False):
     
     # Prepare data for SINDy (using ODE data for cleaner derivatives)
     ode_df = ode_model.get_data_frame()
+
+    poly_lib = ps.PolynomialLibrary(degree=2, include_bias=True, include_interaction=True)
+    queue_lib = min_library(N=params['N_capacity'])
+
+    combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
     
-    discovery = EquationDiscovery(threshold=0.1, alpha=0.05, max_iter=20)
+    discovery = EquationDiscoveryWithDiffusion(threshold=0.1, alpha=0.05, feature_library=combined_lib)
     
     # Prepare training data
     print("  ✓ Preparing training data...")
-    X_train, X_dot_train, t_train = discovery.prepare_data(ode_df)
+    discovery.prepare_data(ode_df)
     
-    print(f"  ✓ Training data shape: {X_train.shape}")
-    print(f"  ✓ Derivatives shape: {X_dot_train.shape}")
     
     # Fit SINDy model
     print("  ✓ Fitting SINDy model...")
     try:
-        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=True, include_interaction=True)
-        queue_lib = min_library(N=params['N_capacity'])
-
-        combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
-        sindy_model = discovery.fit_sindy_model(X_train, X_dot_train, t_train, combined_lib)
+        Xi_drift, Xi_diff = discovery.fit_block_multitask(threshold=0.1, max_iter=20, alpha=0.05)
         print("  ✓ SINDy model fitted successfully")
         
         # Print discovered equations
-        print("\n  Discovered Equations:")
-        print("  " + "="*40)
-        for i, eq in enumerate(discovery.discovered_equations):
-            var_name = 'x' if i == 0 else 'y'
-            print(f"  d{var_name}/dt = {eq}")
-        print()
+        discovery.pretty_print_equations()
         
     except Exception as e:
         print(f"  ⚠ SINDy fitting failed: {str(e)}")
         discovery = None
-        sindy_model = None
+        Xi_drift = None
+        Xi_diff = None
 
     # ========================================
     # STEP 4b: Equation Discovery with PySINDy on SimPy data
@@ -187,35 +182,31 @@ def run_complete_analysis(params, save_plots=True, show_plots=False):
     # Prepare data for SINDy (SimPy data)
     simpy_df = simpy_model.get_data_frame(time_grid)
 
-    discovery_simpy = EquationDiscovery(threshold=0.1, alpha=0.05, max_iter=20)
+    poly_lib = ps.PolynomialLibrary(degree=2, include_bias=True, include_interaction=True)
+    queue_lib = min_library(N=params['N_capacity'])
 
-    X_train_simpy, X_dot_train_simpy, t_train_simpy = discovery_simpy.prepare_data(simpy_df)
+    combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
+    discovery_simpy = EquationDiscoveryWithDiffusion(threshold=0.1, alpha=0.05, feature_library=combined_lib)
 
-    print(f"  ✓ Training data shape (SimPy): {X_train_simpy.shape}")
-    print(f"  ✓ Derivatives shape (SimPy): {X_dot_train_simpy.shape}")
+    discovery_simpy.prepare_data(simpy_df)
+
 
     # Fit SINDy model on SimPy data
     print("  ✓ Fitting SINDy model on SimPy data...")
     try:
-        poly_lib = ps.PolynomialLibrary(degree=2, include_bias=True, include_interaction=True)
-        queue_lib = min_library(N=params['N_capacity'])
-
-        combined_lib = ps.GeneralizedLibrary([poly_lib, queue_lib])
-        simpy_sindy_model = discovery_simpy.fit_sindy_model(X_train_simpy, X_dot_train_simpy, t_train_simpy, combined_lib)
-
+        Xi_drift_simpy, Xi_diff_simpy = discovery_simpy.fit_block_multitask(
+            threshold=0.1, max_iter=20, alpha=0.05
+        )
         print("  ✓ SINDy model fitted successfully on SimPy data")
 
         # Extract discovered equations
-        print("\n  Discovered Equations (SimPy):")
-        for i, eq in enumerate(discovery_simpy.discovered_equations):
-            var_name = 'x' if i == 0 else 'y'
-            print(f"  d{var_name}/dt = {eq}")
-        print()
+        discovery_simpy.pretty_print_equations()
 
     except Exception as e:
         print(f"  ⚠ SINDy fitting failed on SimPy data: {str(e)}")
         discovery_simpy = None
-        simpy_sindy_model = None
+        Xi_drift_simpy = None
+        Xi_diff_simpy = None
     
     # ========================================
     # STEP 5: Compare True vs Discovered Systems
@@ -254,7 +245,7 @@ def run_complete_analysis(params, save_plots=True, show_plots=False):
     # ========================================
     # STEP 5b: Compare True vs Discovered System (SimPy SINDy)
     # ========================================
-    if simpy_sindy_model is not None:
+    if Xi_drift_simpy is not None and discovery_simpy is not None:
         print("STEP 5b: Comparing True vs SimPy-Discovered Systems...")
 
         # Compare systems
@@ -285,39 +276,39 @@ def run_complete_analysis(params, save_plots=True, show_plots=False):
         else:
             plt.close(fig2b)
     
-    # ========================================
-    # STEP 5c: Compare SimPy training data vs Discovered System (SimPy SINDy)
-    # ========================================
-    if simpy_sindy_model is not None:
-        print("STEP 5c: Comparing SimPy Training Data vs SimPy-Discovered Systems...")
+    # # ========================================
+    # # STEP 5c: Compare SimPy training data vs Discovered System (SimPy SINDy)
+    # # ========================================
+    # if simpy_sindy_model is not None:
+    #     print("STEP 5c: Comparing SimPy Training Data vs SimPy-Discovered Systems...")
 
-        # Compare systems
-        comparison_results_simpy_train = discovery_simpy.compare_with_training_data(
-            X_train_simpy, t_train_simpy, t_ode
-        )
+    #     # Compare systems
+    #     comparison_results_simpy_train = discovery_simpy.compare_with_training_data(
+    #         X_train_simpy, t_train_simpy, t_ode
+    #     )
 
-        print(f"  ✓ R² Score (x) (SimPy Train): {comparison_results_simpy_train['r2_x']:.4f}")
-        print(f"  ✓ R² Score (y) (SimPy Train): {comparison_results_simpy_train['r2_y']:.4f}")
-        print(f"  ✓ Average R² (SimPy Train): {comparison_results_simpy_train['avg_r2']:.4f}")
-        print(f"  ✓ Total MSE (SimPy Train): {comparison_results_simpy_train['total_mse']:.6f}")
-        print()
+    #     print(f"  ✓ R² Score (x) (SimPy Train): {comparison_results_simpy_train['r2_x']:.4f}")
+    #     print(f"  ✓ R² Score (y) (SimPy Train): {comparison_results_simpy_train['r2_y']:.4f}")
+    #     print(f"  ✓ Average R² (SimPy Train): {comparison_results_simpy_train['avg_r2']:.4f}")
+    #     print(f"  ✓ Total MSE (SimPy Train): {comparison_results_simpy_train['total_mse']:.6f}")
+    #     print()
 
-        # Plot SINDy comparison
-        fig2c = viz.plot_sindy_comparison(
-            X_train_simpy,
-            comparison_results_simpy_train['discovered_solution'][1:],
-            comparison_results_simpy_train['time'][1:],
-            comparison_results_simpy_train
-        )
+    #     # Plot SINDy comparison
+    #     fig2c = viz.plot_sindy_comparison(
+    #         X_train_simpy,
+    #         comparison_results_simpy_train['discovered_solution'][1:],
+    #         comparison_results_simpy_train['time'][1:],
+    #         comparison_results_simpy_train
+    #     )
 
-        if save_plots:
-            fig2c.savefig(output_dir / "sindy_comparison_simpy_train.png", dpi=300, bbox_inches='tight')
-            print("  ✓ SINDy comparison plot (SimPy Training Data) saved")
+    #     if save_plots:
+    #         fig2c.savefig(output_dir / "sindy_comparison_simpy_train.png", dpi=300, bbox_inches='tight')
+    #         print("  ✓ SINDy comparison plot (SimPy Training Data) saved")
 
-        if show_plots:
-            plt.show()
-        else:
-            plt.close(fig2c)
+    #     if show_plots:
+    #         plt.show()
+    #     else:
+    #         plt.close(fig2c)
 
     # ========================================
     # STEP 6: Create Summary Report

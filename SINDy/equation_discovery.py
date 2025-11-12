@@ -50,27 +50,23 @@ class EquationDiscovery:
         self.t_train = None
         self.X_dot_train = None
         
-    def prepare_data(self, data_df, dt=None, smoothing_window=1):
+    def prepare_data(self, data_df):
         """
-        Prepare data for SINDy analysis.
+        Prepare data for SINDy analysis using forward finite differences.
         
         Parameters:
         -----------
         data_df : pandas.DataFrame
             DataFrame with columns: time, x, y
-        dt : float, optional
-            Time step. If None, computed from data
-        smoothing_window : int
-            Window size for smoothing derivatives
             
         Returns:
         --------
         X : ndarray
-            State variables [x, y]
+            State variables [x, y] (length N-1)
         X_dot : ndarray
-            Time derivatives [dx/dt, dy/dt]
+            Time derivatives [dx/dt, dy/dt] (length N-1)
         t : ndarray
-            Time vector
+            Time vector (length N-1)
         """
         # Sort by time to ensure proper ordering
         data_df = data_df.sort_values('time').reset_index(drop=True)
@@ -78,19 +74,16 @@ class EquationDiscovery:
         t = data_df['time'].values
         X = data_df[['x', 'y']].values
         
-        # Compute time step if not provided
-        if dt is None:
-            dt = np.mean(np.diff(t))
+        # Compute derivatives using forward finite differences
+        dt = np.diff(t)
+        dX = np.diff(X, axis=0)
+        X_dot = dX / dt[:, None]
         
-        # Compute derivatives using finite differences
-        X_dot = np.gradient(X, t, axis=0)
+        # Remove last data point from X and first time to align shapes
+        X = X[:-1]
+        t = t[1:]
         
-        # Apply smoothing to derivatives if requested
-        if smoothing_window > 1:
-            from scipy.ndimage import uniform_filter1d
-            X_dot = uniform_filter1d(X_dot, size=smoothing_window, axis=0)
-        
-        # Remove NaN values that might arise from differentiation
+        # Remove NaNs that might arise just in case
         valid_indices = ~(np.isnan(X).any(axis=1) | np.isnan(X_dot).any(axis=1))
         
         return X[valid_indices], X_dot[valid_indices], t[valid_indices]
@@ -122,7 +115,7 @@ class EquationDiscovery:
         # Create SINDy model
         self.model = ps.SINDy(
             optimizer=ps.STLSQ(threshold=self.threshold, alpha=self.alpha, 
-                              max_iter=self.max_iter, verbose=True, normalize_columns=False),
+                              max_iter=self.max_iter, verbose=False, normalize_columns=False),
             feature_library=feature_library,
             differentiation_method=ps.FiniteDifference()
         )
@@ -137,11 +130,7 @@ class EquationDiscovery:
         
         # Extract discovered equations
         self.discovered_equations = self.model.equations()
-        try:
-            self.feature_names = self.model.get_feature_names()
-        except:
-            # Fallback for older PySINDy versions
-            self.feature_names = ['x', 'y']
+        self.feature_names = self.model.get_feature_names()
         self.coefficients = self.model.coefficients()
         
         return self.model
@@ -281,118 +270,4 @@ class EquationDiscovery:
             'r2_y': r2_y,
             'total_mse': mse_x + mse_y,
             'avg_r2': (r2_x + r2_y) / 2
-        }
-    
-    def plot_comparison(self, comparison_results, figsize=(15, 10)):
-        """
-        Plot comparison between true and discovered systems.
-        
-        Parameters:
-        -----------
-        comparison_results : dict
-            Results from compare_with_true_system
-        figsize : tuple
-            Figure size
-        """
-        fig, axes = plt.subplots(2, 3, figsize=figsize)
-        
-        t = comparison_results['time']
-        true_sol = comparison_results['true_solution']
-        disc_sol = comparison_results['discovered_solution']
-        
-        # Plot x trajectories
-        axes[0, 0].plot(t, true_sol[:, 0], 'b-', linewidth=2, label='True System')
-        axes[0, 0].plot(t, disc_sol[:, 0], 'r--', linewidth=2, label='Discovered System')
-        axes[0, 0].set_title(f'Server Level x(t)\nR² = {comparison_results["r2_x"]:.4f}')
-        axes[0, 0].set_xlabel('Time')
-        axes[0, 0].set_ylabel('x(t)')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
-        
-        # Plot y trajectories
-        axes[0, 1].plot(t, true_sol[:, 1], 'b-', linewidth=2, label='True System')
-        axes[0, 1].plot(t, disc_sol[:, 1], 'r--', linewidth=2, label='Discovered System')
-        axes[0, 1].set_title(f'Return Level y(t)\nR² = {comparison_results["r2_y"]:.4f}')
-        axes[0, 1].set_xlabel('Time')
-        axes[0, 1].set_ylabel('y(t)')
-        axes[0, 1].legend()
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # Phase portraits
-        axes[0, 2].plot(true_sol[:, 0], true_sol[:, 1], 'b-', linewidth=2, label='True System')
-        axes[0, 2].plot(disc_sol[:, 0], disc_sol[:, 1], 'r--', linewidth=2, label='Discovered System')
-        axes[0, 2].set_title('Phase Portrait Comparison')
-        axes[0, 2].set_xlabel('x(t)')
-        axes[0, 2].set_ylabel('y(t)')
-        axes[0, 2].legend()
-        axes[0, 2].grid(True, alpha=0.3)
-        
-        # Error plots
-        error_x = true_sol[:, 0] - disc_sol[:, 0]
-        error_y = true_sol[:, 1] - disc_sol[:, 1]
-        
-        axes[1, 0].plot(t, error_x, 'g-', linewidth=2)
-        axes[1, 0].set_title(f'Error in x(t)\nMSE = {comparison_results["mse_x"]:.6f}')
-        axes[1, 0].set_xlabel('Time')
-        axes[1, 0].set_ylabel('Error')
-        axes[1, 0].grid(True, alpha=0.3)
-        
-        axes[1, 1].plot(t, error_y, 'g-', linewidth=2)
-        axes[1, 1].set_title(f'Error in y(t)\nMSE = {comparison_results["mse_y"]:.6f}')
-        axes[1, 1].set_xlabel('Time')
-        axes[1, 1].set_ylabel('Error')
-        axes[1, 1].grid(True, alpha=0.3)
-        
-        # Combined error
-        total_error = np.sqrt(error_x**2 + error_y**2)
-        axes[1, 2].plot(t, total_error, 'm-', linewidth=2)
-        axes[1, 2].set_title(f'Total Error\nAvg R² = {comparison_results["avg_r2"]:.4f}')
-        axes[1, 2].set_xlabel('Time')
-        axes[1, 2].set_ylabel('Total Error')
-        axes[1, 2].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        return fig
-    
-    def assess_model_quality(self, X_test, X_dot_test):
-        """
-        Assess quality of the discovered model on test data.
-        
-        Parameters:
-        -----------
-        X_test : ndarray
-            Test state variables
-        X_dot_test : ndarray
-            Test derivatives
-            
-        Returns:
-        --------
-        metrics : dict
-            Quality assessment metrics
-        """
-        if self.model is None:
-            raise ValueError("Model not fitted. Call fit_sindy_model first.")
-        
-        # Predict derivatives
-        X_dot_pred = self.predict_derivatives(X_test)
-        
-        # Calculate metrics
-        mse_x = mean_squared_error(X_dot_test[:, 0], X_dot_pred[:, 0])
-        mse_y = mean_squared_error(X_dot_test[:, 1], X_dot_pred[:, 1])
-        
-        r2_x = r2_score(X_dot_test[:, 0], X_dot_pred[:, 0])
-        r2_y = r2_score(X_dot_test[:, 1], X_dot_pred[:, 1])
-        
-        # Model complexity (number of non-zero coefficients)
-        complexity = np.sum(np.abs(self.coefficients) > self.threshold)
-        
-        return {
-            'derivative_mse_x': mse_x,
-            'derivative_mse_y': mse_y,
-            'derivative_r2_x': r2_x,
-            'derivative_r2_y': r2_y,
-            'total_derivative_mse': mse_x + mse_y,
-            'avg_derivative_r2': (r2_x + r2_y) / 2,
-            'model_complexity': complexity,
-            'sparsity_ratio': 1 - (complexity / self.coefficients.size)
         }
