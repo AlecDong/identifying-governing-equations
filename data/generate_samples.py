@@ -9,7 +9,7 @@ from pathlib import Path
 from model.fluid_queue_ode import FluidQueueODE
 from model.fluid_queue_simpy import FluidQueueSimPy
 
-def generate_trajectory_dataset(params_list, num_trajectories=10, t_span=(0,100), num_points=20000, output_file="dataset/trajectory_dataset.pkl"):
+def generate_trajectory_dataset(params_list, num_trajectories=10, t_span=(0,1000), num_points=200000, output_file="dataset/trajectory_dataset_2.pkl"):
     """
     Generate trajectories for multiple parameter sets and save as pickle.
 
@@ -75,11 +75,11 @@ if __name__ == "__main__":
     # Base parameters
     base_params_list = [
         {'lambda_arrival': 5.0, 'mu_service': 3.0, 'p_return': 0.3, 'gamma_return': 1.5, 'N_capacity': 2.0},
-        {'lambda_arrival': 5.0, 'mu_service': 3.0, 'p_return': 0.3, 'gamma_return': 1.5, 'N_capacity': 4.0}
+        # {'lambda_arrival': 5.0, 'mu_service': 3.0, 'p_return': 0.3, 'gamma_return': 1.5, 'N_capacity': 4.0}
     ]
 
     # Scaling factors
-    scales = [1, 10, 100, 1000]
+    scales = [1000]
 
     # Generate full parameter list with scaled lambda and N
     params_list = []
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         print(p)
 
     # Generate dataset
-    dataset = generate_trajectory_dataset(params_list, num_trajectories=5)
+    dataset = generate_trajectory_dataset(params_list, num_trajectories=1)
     
     # Example: load dataset back
     loaded_dataset = load_trajectory_dataset()
